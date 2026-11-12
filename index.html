@@ -50,7 +50,7 @@
             font-size: 16px;
             cursor: pointer;
             transition: opacity 0.2s;
-            box-sizing: border-box; 
+            box-sizing: border-box; /* ★ボタン幅を揃える設定 */
         }
         .btn:hover { opacity: 0.9; }
         .btn-success { background-color: var(--success); }
@@ -146,7 +146,6 @@
             font-weight: bold;
         }
 
-        /* ★ クラス名を hint-jp から hint-ch に修正 */
         .hint-ch { font-size: 24px; font-weight: bold; margin-bottom: 10px; margin-top: 10px; }
         .hint-sentence { font-size: 14px; color: #7f8fa6; margin-bottom: 20px; }
         .eng-sentence { font-size: 18px; font-weight: bold; }
@@ -209,6 +208,11 @@
             display: inline-block;
             margin: 15px 0;
         }
+
+        /* ★ ラスト1問の点滅アニメーション */
+        @keyframes blink {
+            50% { opacity: 0.2; }
+        }
     </style>
 </head>
 <body>
@@ -220,7 +224,8 @@
         <input type="password" id="password-input" placeholder="密码">
         <button class="btn" onclick="checkPassword()">登录</button>
         
-        <a href="https://mave-01.github.io/gotolab-kikutan/" class="btn btn-warning" style="text-decoration: none; text-align: center; margin-top: 20px; display: block; background-color: #7f8fa6;">🇯🇵 日本語版に切り替える</a>
+        <!-- ★ 日本語話者が迷い込んだ時用のボタン -->
+        <a href="index.html" class="btn btn-warning" style="text-decoration: none; text-align: center; margin-top: 20px; background-color: #7f8fa6;">🇯🇵 日本語版に切り替える</a>
     </div>
 
     <div id="screen-loading" class="screen">
@@ -229,7 +234,7 @@
 
     <div id="screen-select" class="screen">
         <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
-            <button class="btn btn-small sound-toggle-btn" style="background-color: var(--primary);" onclick="toggleSound()">🔊 声音: 开</button>
+            <button class="btn btn-small sound-toggle-btn" style="background-color: #95a5a6;" onclick="toggleSound()">🔇 声音: 关</button>
         </div>
 
         <h2>选择测验期数</h2>
@@ -263,19 +268,42 @@
         <div class="session-grid" id="sub-session-buttons"></div>
     </div>
 
+    <!-- ★ 新規追加: 本番前のクッション画面 (中国語版) -->
+    <div id="screen-exam-prep" class="screen">
+        <div class="header-bar">
+            <button class="btn btn-secondary btn-small" onclick="showScreen('screen-sub-select')">◀ 返回</button>
+        </div>
+        <h2>正式测试即将开始！</h2>
+        <div class="card" style="margin: 30px 0; text-align: left; padding: 25px;">
+            <h3 style="text-align: center; color: var(--danger); margin-top: 0;" id="exam-prep-session">第X期</h3>
+            <ul style="font-size: 16px; line-height: 1.8; color: var(--text);">
+                <li>⏱ 考试限时 <strong>3分钟</strong>。</li>
+                <li>💰 答对 <strong>+80日元</strong>，答错或跳过 <strong>-20日元</strong>。</li>
+                <li>🎯 最终获得的奖金将在结果中显示。（※若为负数则按0日元计算）</li>
+                <li>⚠️ 3分钟结束后，完成当前输入的<strong>“最后一题”</strong>即测试结束。</li>
+            </ul>
+        </div>
+        <button class="btn btn-danger" style="font-size: 20px; font-weight: bold; padding: 20px;" id="exam-start-btn">Start</button>
+    </div>
+
     <div id="screen-test" class="screen">
         <div class="header-bar">
             <button class="btn btn-secondary btn-small" style="padding: 8px 12px;" onclick="backToSubSelect()">◀ 退出</button>
             <div id="timer-display" class="timer-display" style="margin: 0 10px; flex-grow: 1; text-align: center;"></div>
+            
+            <!-- ★ 新規追加: リアルタイム金額表示 -->
+            <div id="live-reward-container" style="display:none; font-weight:bold; color:#e67e22; font-size:18px; margin: 0 10px;">
+                💰 <span id="live-reward-display">0</span> 日元
+            </div>
+
             <div style="text-align: right;">
-                <button class="btn btn-small sound-toggle-btn" style="background-color: var(--primary); margin-bottom: 5px; display: inline-block;" onclick="toggleSound()">🔊 声音: 开</button>
+                <button class="btn btn-small sound-toggle-btn" style="background-color: #95a5a6; margin-bottom: 5px; display: inline-block;" onclick="toggleSound()">🔇 声音: 关</button>
                 <div class="progress" id="progress-text"></div>
             </div>
         </div>
         
         <div class="card" id="test-card">
             <div id="word-id" class="word-id-badge"></div>
-            <!-- ★ HTMLのIDとクラスを完全に ch に修正 -->
             <div class="hint-ch" id="word-ch"></div>
             <div class="hint-sentence" id="sentence-ch"></div>
             <div class="eng-sentence" id="sentence-en"></div>
@@ -310,7 +338,10 @@
     let timerInterval = null;
     let remainingTime = 0;
     let isExamMode = false;
-    let isSoundEnabled = true;
+    let isLastQuestion = false;
+
+    // ★ 音声はデフォルトOFF
+    let isSoundEnabled = false;
 
     const SYSTEM_PASSWORD = "gotolab"; 
     const correctAudio = new Audio('correct.mp3');
@@ -441,6 +472,13 @@
         showSubSelect(null, customWords, startId, endId);
     }
 
+    // ★ 新規追加: 本番前のクッション画面
+    function showExamPrep(sessionNum, words) {
+        document.getElementById('exam-prep-session').innerText = `第${sessionNum}期`;
+        document.getElementById('exam-start-btn').onclick = () => startRound(words, 1, true, true);
+        showScreen('screen-exam-prep');
+    }
+
     function showSubSelect(sessionNum = null, customWords = null, minId = null, maxId = null) {
         const container = document.getElementById('sub-session-buttons');
         container.innerHTML = '';
@@ -484,7 +522,7 @@
             examBtn.className = 'btn btn-danger';
             examBtn.style.gridColumn = '1 / -1';
             examBtn.innerHTML = `👑 正式测试 <span style="font-size: 14px; font-weight:normal;">(共${targetWords.length}词 / 3分钟限时 / 奖金模式)</span>`;
-            examBtn.onclick = () => startRound(targetWords, 1, true, true);
+            examBtn.onclick = () => showExamPrep(sessionNum, targetWords);
             container.appendChild(examBtn);
         }
         showScreen('screen-sub-select');
@@ -506,6 +544,8 @@
     function startRound(words, round, useTimer = false, isExam = false) {
         clearInterval(timerInterval); 
         isExamMode = isExam; 
+        isLastQuestion = false; // ★ 初期化
+        
         currentQueue = shuffleArray([...words]);
         wrongQueue = [];
         currentQuestionIndex = 0;
@@ -514,17 +554,29 @@
         wrongCount = 0;
         
         const timerDisplay = document.getElementById('timer-display');
+        const rewardContainer = document.getElementById('live-reward-container');
+        
+        if (isExamMode) {
+            rewardContainer.style.display = 'inline-block';
+            updateLiveReward();
+        } else {
+            rewardContainer.style.display = 'none';
+        }
         
         if (useTimer) {
             remainingTime = 180; 
             timerDisplay.style.display = 'block';
             updateTimerUI();
+            
             timerInterval = setInterval(() => {
                 remainingTime--;
-                updateTimerUI();
                 if (remainingTime <= 0) {
                     clearInterval(timerInterval);
-                    handleTimeUp();
+                    isLastQuestion = true;
+                    // ★ 中国語でのラスト1問表示
+                    timerDisplay.innerHTML = '<span style="color:var(--danger); animation: blink 1s infinite;">最后一题！</span>';
+                } else {
+                    updateTimerUI();
                 }
             }, 1000);
         } else {
@@ -540,19 +592,10 @@
         document.getElementById('timer-display').innerText = `⏱ ${m}:${s}`;
     }
 
-    function handleTimeUp() {
-        if (!isExamMode) {
-            for (let i = currentQuestionIndex; i < currentQueue.length; i++) {
-                if (!wrongQueue.includes(currentQueue[i])) {
-                    wrongQueue.push(currentQueue[i]);
-                    wrongCount++;
-                }
-            }
-            alert("⏳ 时间到！\n剩下的题目将作为错误记入下一轮。");
-        } else {
-            alert("⏳ 时间到！\n测试结束，请查看结果。");
-        }
-        finishRound();
+    function updateLiveReward() {
+        if (!isExamMode) return;
+        const currentReward = (correctCount * 80) - (wrongCount * 20);
+        document.getElementById('live-reward-display').innerText = currentReward;
     }
 
     function updateProgressUI() {
@@ -579,10 +622,10 @@
         updateProgressUI();
         
         document.getElementById('word-id').innerText = `No. ${currentWord.id}`;
-        
-        // ★ JSONからの読み込みを currentWord.sentence_ch に修正
         document.getElementById('word-ch').innerText = currentWord.meaning;
-        document.getElementById('sentence-ch').innerText = currentWord.sentence_ch;
+        
+        // ★ 魔法のコード：JSONが sentence_ch でも sentence_jp でも確実に読み込む
+        document.getElementById('sentence-ch').innerText = currentWord.sentence_ch || currentWord.sentence_jp || "";
         
         document.getElementById('sentence-en').innerText = currentWord.sentence;
         
@@ -600,8 +643,11 @@
 
     document.getElementById('answer-input').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') {
-            if (isWaitingForNext) nextQuestion();
-            else checkAnswer();
+            if (isWaitingForNext) {
+                nextQuestion();
+            } else {
+                checkAnswer();
+            }
         }
     });
 
@@ -614,6 +660,7 @@
             playCorrectSound();
             correctCount++;
             updateProgressUI();
+            updateLiveReward();
             
             const card = document.getElementById('test-card');
             input.style.borderColor = 'var(--success)';
@@ -621,8 +668,12 @@
             document.getElementById('idk-btn').style.display = 'none'; 
             
             setTimeout(() => {
-                currentQuestionIndex++;
-                displayQuestion();
+                if (isLastQuestion) {
+                    finishRound();
+                } else {
+                    currentQuestionIndex++;
+                    displayQuestion();
+                }
             }, 100); 
         } else {
             handleWrongAnswer(userAnswer);
@@ -641,6 +692,7 @@
             wrongQueue.push(currentWord);
             wrongCount++;
             updateProgressUI();
+            updateLiveReward();
         }
 
         const input = document.getElementById('answer-input');
@@ -664,8 +716,12 @@
     }
 
     function nextQuestion() {
-        currentQuestionIndex++;
-        displayQuestion();
+        if (isLastQuestion) {
+            finishRound();
+        } else {
+            currentQuestionIndex++;
+            displayQuestion();
+        }
     }
 
     function finishRound() {
