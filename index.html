@@ -50,7 +50,7 @@
             font-size: 16px;
             cursor: pointer;
             transition: opacity 0.2s;
-            box-sizing: border-box; /* ★ボタン幅を揃える設定 */
+            box-sizing: border-box;
         }
         .btn:hover { opacity: 0.9; }
         .btn-success { background-color: var(--success); }
@@ -209,7 +209,6 @@
             margin: 15px 0;
         }
 
-        /* ★ ラスト1問の点滅アニメーション */
         @keyframes blink {
             50% { opacity: 0.2; }
         }
@@ -224,8 +223,8 @@
         <input type="password" id="password-input" placeholder="密码">
         <button class="btn" onclick="checkPassword()">登录</button>
         
-        <!-- ★ 日本語話者が迷い込んだ時用のボタン -->
-        <a href="https://mave-01.github.io/gotolab-kikutan/" class="btn btn-warning" style="text-decoration: none; text-align: center; margin-top: 20px; background-color: #7f8fa6;">🇯🇵 日本語版に切り替える</a>
+        <!-- ★ ここを日本語版リポジトリの実際のURLに書き換えてください -->
+        <a href="https://[ユーザー名].github.io/[日本語版リポジトリ名]/index.html" class="btn btn-warning" style="text-decoration: none; text-align: center; margin-top: 20px; display: block; background-color: #7f8fa6; box-sizing: border-box;">🇯🇵 日本語版に切り替える</a>
     </div>
 
     <div id="screen-loading" class="screen">
@@ -268,7 +267,6 @@
         <div class="session-grid" id="sub-session-buttons"></div>
     </div>
 
-    <!-- ★ 新規追加: 本番前のクッション画面 (中国語版) -->
     <div id="screen-exam-prep" class="screen">
         <div class="header-bar">
             <button class="btn btn-secondary btn-small" onclick="showScreen('screen-sub-select')">◀ 返回</button>
@@ -291,7 +289,6 @@
             <button class="btn btn-secondary btn-small" style="padding: 8px 12px;" onclick="backToSubSelect()">◀ 退出</button>
             <div id="timer-display" class="timer-display" style="margin: 0 10px; flex-grow: 1; text-align: center;"></div>
             
-            <!-- ★ 新規追加: リアルタイム金額表示 -->
             <div id="live-reward-container" style="display:none; font-weight:bold; color:#e67e22; font-size:18px; margin: 0 10px;">
                 💰 <span id="live-reward-display">0</span> 日元
             </div>
@@ -332,7 +329,9 @@
     let currentQuestionIndex = 0;
     let currentWord = null;
     let roundNumber = 1;
-    let isWaitingForNext = false; 
+    let isWaitingForNext = false;
+    let isRetrying = false; // 练习模式重新输入状态
+
     let correctCount = 0;
     let wrongCount = 0;
     let timerInterval = null;
@@ -340,7 +339,6 @@
     let isExamMode = false;
     let isLastQuestion = false;
 
-    // ★ 音声はデフォルトOFF
     let isSoundEnabled = false;
 
     const SYSTEM_PASSWORD = "gotolab"; 
@@ -472,7 +470,6 @@
         showSubSelect(null, customWords, startId, endId);
     }
 
-    // ★ 新規追加: 本番前のクッション画面
     function showExamPrep(sessionNum, words) {
         document.getElementById('exam-prep-session').innerText = `第${sessionNum}期`;
         document.getElementById('exam-start-btn').onclick = () => startRound(words, 1, true, true);
@@ -544,7 +541,8 @@
     function startRound(words, round, useTimer = false, isExam = false) {
         clearInterval(timerInterval); 
         isExamMode = isExam; 
-        isLastQuestion = false; // ★ 初期化
+        isLastQuestion = false;
+        isRetrying = false;
         
         currentQueue = shuffleArray([...words]);
         wrongQueue = [];
@@ -573,7 +571,6 @@
                 if (remainingTime <= 0) {
                     clearInterval(timerInterval);
                     isLastQuestion = true;
-                    // ★ 中国語でのラスト1問表示
                     timerDisplay.innerHTML = '<span style="color:var(--danger); animation: blink 1s infinite;">最后一题！</span>';
                 } else {
                     updateTimerUI();
@@ -618,19 +615,19 @@
 
         currentWord = currentQueue[currentQuestionIndex];
         isWaitingForNext = false;
+        isRetrying = false;
         
         updateProgressUI();
         
         document.getElementById('word-id').innerText = `No. ${currentWord.id}`;
         document.getElementById('word-ch').innerText = currentWord.meaning;
-        
-        // ★ 魔法のコード：JSONが sentence_ch でも sentence_jp でも確実に読み込む
         document.getElementById('sentence-ch').innerText = currentWord.sentence_ch || currentWord.sentence_jp || "";
-        
         document.getElementById('sentence-en').innerText = currentWord.sentence;
         
         const input = document.getElementById('answer-input');
+        input.disabled = false;
         input.value = '';
+        input.placeholder = '输入英语单词';
         input.style.display = 'block';
         input.style.borderColor = '#dcdde1';
         input.focus();
@@ -653,11 +650,44 @@
 
     function checkAnswer() {
         const input = document.getElementById('answer-input');
+        if (input.disabled) return;
+
         const userAnswer = input.value.trim().toLowerCase();
         const correctAnswer = currentWord.word.trim().toLowerCase();
         
+        // 练习模式重新输入判定
+        if (isRetrying) {
+            if (userAnswer === correctAnswer) {
+                playCorrectSound();
+                input.disabled = true;
+                isRetrying = false;
+
+                const card = document.getElementById('test-card');
+                input.style.borderColor = 'var(--success)';
+                card.style.backgroundColor = '#e8f8f5';
+
+                setTimeout(() => {
+                    currentQuestionIndex++;
+                    displayQuestion();
+                }, 150);
+            } else {
+                playWrongSound();
+                input.style.borderColor = 'var(--danger)';
+                input.value = '';
+                input.focus();
+
+                const feedbackArea = document.getElementById('feedback-area');
+                feedbackArea.innerHTML =
+                    `正确答案: <span style="font-size:24px; user-select:none;">${currentWord.word}</span><br>` +
+                    `<span style="font-size:14px; color:var(--danger);">请再次正确输入 (你的输入: ${userAnswer || '未输入'})</span>`;
+            }
+            return;
+        }
+
+        // 初次正常判定
         if (userAnswer === correctAnswer) {
             playCorrectSound();
+            input.disabled = true;
             correctCount++;
             updateProgressUI();
             updateLiveReward();
@@ -685,7 +715,6 @@
     }
 
     function handleWrongAnswer(userAnswer) {
-        isWaitingForNext = true;
         playWrongSound(); 
         
         if (!wrongQueue.includes(currentWord)) {
@@ -701,18 +730,34 @@
 
         input.style.borderColor = 'var(--danger)';
         card.style.backgroundColor = '#fdedec'; 
-        
         feedbackArea.className = 'feedback wrong';
-        feedbackArea.innerHTML = `正确答案: <span style="font-size:24px;">${currentWord.word}</span><br><span style="font-size:14px; color:#7f8fa6;">你的输入: ${userAnswer}</span>`;
         feedbackArea.style.display = 'block';
-        
-        input.style.display = 'none';
-        document.getElementById('idk-btn').style.display = 'none'; 
-        
-        const nextBtn = document.getElementById('next-btn');
-        nextBtn.style.display = 'block';
-        nextBtn.className = 'btn btn-danger';
-        nextBtn.focus();
+        document.getElementById('idk-btn').style.display = 'none';
+
+        if (isExamMode) {
+            // 正式测试：保持原样，点击下一题继续
+            isWaitingForNext = true;
+            feedbackArea.innerHTML = `正确答案: <span style="font-size:24px;">${currentWord.word}</span><br><span style="font-size:14px; color:#7f8fa6;">你的输入: ${userAnswer}</span>`;
+            input.style.display = 'none';
+            
+            const nextBtn = document.getElementById('next-btn');
+            nextBtn.style.display = 'block';
+            nextBtn.className = 'btn btn-danger';
+            nextBtn.focus();
+        } else {
+            // 练习模式：需要输入正确拼写后才能进入下一题
+            isRetrying = true;
+            feedbackArea.innerHTML =
+                `正确答案: <span style="font-size:24px; user-select:none;">${currentWord.word}</span><br>` +
+                `<span style="font-size:14px; color:#7f8fa6;">你的输入: ${userAnswer}</span><br>` +
+                `<span style="font-size:14px; color:var(--danger);">※ 请输入正确的拼写以继续下一题</span>`;
+            
+            input.style.display = 'block';
+            input.value = '';
+            input.placeholder = '输入正确拼写';
+            input.focus();
+            document.getElementById('next-btn').style.display = 'none';
+        }
     }
 
     function nextQuestion() {
